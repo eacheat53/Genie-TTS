@@ -48,7 +48,8 @@ dependencies = [
     "jamo",
     "ko_pron",
     "g2pk2",
-    "eunjeon"
+    "eunjeon",
+    "requests>=2.33.1",
 ]
 
 

@@ -17,7 +17,7 @@ from .Utils.Language import normalize_language
 logger = logging.getLogger(__name__)
 
 _reference_audios: Dict[str, dict] = {}
-SUPPORTED_AUDIO_EXTS = {'.wav', '.flac', '.ogg', '.aiff', '.aif'}
+SUPPORTED_AUDIO_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif"}
 
 app = FastAPI()
 
@@ -42,6 +42,7 @@ class ReferenceAudioPayload(BaseModel):
 class TTSPayload(BaseModel):
     character_name: str
     text: str
+    text_language: Optional[str] = None
     split_sentence: bool = False
     save_path: Optional[str] = None
 
@@ -54,7 +55,10 @@ def load_character_endpoint(payload: CharacterPayload):
             model_dir=payload.onnx_model_dir,
             language=normalize_language(payload.language),
         )
-        return {"status": "success", "message": f"Character '{payload.character_name}' loaded."}
+        return {
+            "status": "success",
+            "message": f"Character '{payload.character_name}' loaded.",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -63,7 +67,10 @@ def load_character_endpoint(payload: CharacterPayload):
 def unload_character_endpoint(payload: UnloadCharacterPayload):
     try:
         model_manager.remove_character(character_name=payload.character_name)
-        return {"status": "success", "message": f"Character '{payload.character_name}' unloaded."}
+        return {
+            "status": "success",
+            "message": f"Character '{payload.character_name}' unloaded.",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -77,26 +84,30 @@ def set_reference_audio_endpoint(payload: ReferenceAudioPayload):
             detail=f"Audio format '{ext}' is not supported. Supported formats: {SUPPORTED_AUDIO_EXTS}",
         )
     _reference_audios[payload.character_name] = {
-        'audio_path': payload.audio_path,
-        'audio_text': payload.audio_text,
-        'language': normalize_language(payload.language),
+        "audio_path": payload.audio_path,
+        "audio_text": payload.audio_text,
+        "language": normalize_language(payload.language),
     }
-    return {"status": "success", "message": f"Reference audio for '{payload.character_name}' set."}
+    return {
+        "status": "success",
+        "message": f"Reference audio for '{payload.character_name}' set.",
+    }
 
 
 def run_tts_in_background(
-        character_name: str,
-        text: str,
-        split_sentence: bool,
-        save_path: Optional[str],
-        chunk_callback: Callable[[Optional[bytes]], None]
+    character_name: str,
+    text: str,
+    split_sentence: bool,
+    save_path: Optional[str],
+    chunk_callback: Callable[[Optional[bytes]], None],
+    text_language: Optional[str] = None,
 ):
     try:
         context.current_speaker = character_name
         context.current_prompt_audio = ReferenceAudio(
-            prompt_wav=_reference_audios[character_name]['audio_path'],
-            prompt_text=_reference_audios[character_name]['audio_text'],
-            language=_reference_audios[character_name]['language'],
+            prompt_wav=_reference_audios[character_name]["audio_path"],
+            prompt_text=_reference_audios[character_name]["audio_text"],
+            language=_reference_audios[character_name]["language"],
         )
         tts_player.start_session(
             play=False,
@@ -104,7 +115,7 @@ def run_tts_in_background(
             save_path=save_path,
             chunk_callback=chunk_callback,
         )
-        tts_player.feed(text)
+        tts_player.feed(text, text_language=text_language)
         tts_player.end_session()
         tts_player.wait_for_tts_completion()
     except Exception as e:
@@ -122,13 +133,19 @@ async def audio_stream_generator(queue: asyncio.Queue) -> AsyncIterator[bytes]:
 @app.post("/tts")
 async def tts_endpoint(payload: TTSPayload):
     if payload.character_name not in _reference_audios:
-        raise HTTPException(status_code=404, detail="Character not found or reference audio not set.")
+        raise HTTPException(
+            status_code=404, detail="Character not found or reference audio not set."
+        )
 
     loop = asyncio.get_running_loop()
     stream_queue: asyncio.Queue[Union[bytes, None]] = asyncio.Queue()
 
     def tts_chunk_callback(chunk: Optional[bytes]):
         loop.call_soon_threadsafe(stream_queue.put_nowait, chunk)
+
+    text_lang = (
+        normalize_language(payload.text_language) if payload.text_language else None
+    )
 
     loop.run_in_executor(
         None,
@@ -137,10 +154,13 @@ async def tts_endpoint(payload: TTSPayload):
         payload.text,
         payload.split_sentence,
         payload.save_path,
-        tts_chunk_callback
+        tts_chunk_callback,
+        text_lang,
     )
 
-    return StreamingResponse(audio_stream_generator(stream_queue), media_type="audio/wav")
+    return StreamingResponse(
+        audio_stream_generator(stream_queue), media_type="audio/wav"
+    )
 
 
 @app.post("/stop")

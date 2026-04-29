@@ -17,8 +17,8 @@ from ..Utils.Utils import clear_queue
 
 logger = logging.getLogger(__name__)
 
-STREAM_END = 'STREAM_END'  # 这是一个特殊的标记，表示文本流结束
-AUDIO_STREAM_END = 'AUDIO_STREAM_END'  # 新增：特殊的标记，表示音频流播放结束
+STREAM_END = "STREAM_END"  # 这是一个特殊的标记，表示文本流结束
+AUDIO_STREAM_END = "AUDIO_STREAM_END"  # 新增：特殊的标记，表示音频流播放结束
 
 
 class TTSPlayer:
@@ -34,7 +34,9 @@ class TTSPlayer:
 
         self._stop_event: threading.Event = threading.Event()
         self._tts_done_event: threading.Event = threading.Event()
-        self._playback_done_event: threading.Event = threading.Event()  # 新增：用于标记播放完成
+        self._playback_done_event: threading.Event = (
+            threading.Event()
+        )  # 新增：用于标记播放完成
         self._api_lock: threading.Lock = threading.Lock()
 
         self._tts_worker: Optional[threading.Thread] = None
@@ -56,9 +58,14 @@ class TTSPlayer:
         """从文本队列取句子，生成音频，并通过回调函数或音频队列分发。"""
         while not self._stop_event.is_set():
             try:
-                sentence = self._text_queue.get(timeout=1)
-                if sentence is None or self._stop_event.is_set():
+                item = self._text_queue.get(timeout=1)
+                if item is None or self._stop_event.is_set():
                     break
+                if isinstance(item, tuple):
+                    sentence, text_language = item
+                else:
+                    sentence = item
+                    text_language = None
             except queue.Empty:
                 continue
 
@@ -83,6 +90,8 @@ class TTSPlayer:
                     logger.error("Missing model or reference audio.")
                     continue
 
+                lang_to_use = text_language if text_language else gsv_model.LANGUAGE
+
                 tts_client.stop_event.clear()
                 audio_chunk = tts_client.tts(
                     text=sentence,
@@ -92,7 +101,7 @@ class TTSPlayer:
                     stage_decoder=gsv_model.T2S_STAGE_DECODER,
                     vocoder=gsv_model.VITS,
                     prompt_encoder=gsv_model.PROMPT_ENCODER,
-                    language=gsv_model.LANGUAGE,
+                    language=lang_to_use,
                 )
 
                 if audio_chunk is not None:
@@ -107,7 +116,10 @@ class TTSPlayer:
                         self._chunk_callback(audio_data)
 
             except Exception as e:
-                logger.error(f"A critical error occurred while processing the TTS task: {e}", exc_info=True)
+                logger.error(
+                    f"A critical error occurred while processing the TTS task: {e}",
+                    exc_info=True,
+                )
                 # 发生错误时，也要确保发送结束信号
                 if self._chunk_callback:
                     self._chunk_callback(None)
@@ -116,9 +128,10 @@ class TTSPlayer:
     def _playback_worker_loop(self):
         try:
             import sounddevice as sd
-            with sd.OutputStream(samplerate=self.sample_rate,
-                                 channels=self.channels,
-                                 dtype='float32') as stream:
+
+            with sd.OutputStream(
+                samplerate=self.sample_rate, channels=self.channels, dtype="float32"
+            ) as stream:
                 while not self._stop_event.is_set():
                     try:
                         audio_chunk = self._audio_queue.get(timeout=1)
@@ -134,7 +147,9 @@ class TTSPlayer:
                         logger.error(f"Error during audio playback: {e}", exc_info=True)
 
         except Exception as e:
-            logger.warning(f"Failed to initialize sounddevice: {e}. Audio playback will be skipped.")
+            logger.warning(
+                f"Failed to initialize sounddevice: {e}. Audio playback will be skipped."
+            )
             # 如果音频设备初始化失败，即使不播放，也要消费队列中的结束信号，防止主线程死锁
             while not self._stop_event.is_set():
                 try:
@@ -149,12 +164,14 @@ class TTSPlayer:
     def _save_session_audio(self):
         try:
             full_audio = np.concatenate(self._session_audio_chunks, axis=0)
-            with wave.open(self._current_save_path, 'wb') as wf:
+            with wave.open(self._current_save_path, "wb") as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(self.bytes_per_sample)
                 wf.setframerate(self.sample_rate)
                 wf.writeframes(self._preprocess_for_playback(full_audio))
-            logger.info(f"Audio successfully saved to {os.path.abspath(self._current_save_path)}")
+            logger.info(
+                f"Audio successfully saved to {os.path.abspath(self._current_save_path)}"
+            )
         except Exception as e:
             logger.error(f"Failed to save audio: {e}")
         finally:
@@ -162,11 +179,11 @@ class TTSPlayer:
             self._current_save_path = None
 
     def start_session(
-            self,
-            play: bool = False,
-            split: bool = False,
-            save_path: Optional[str] = None,
-            chunk_callback: Optional[Callable[[Optional[bytes]], None]] = None
+        self,
+        play: bool = False,
+        split: bool = False,
+        save_path: Optional[str] = None,
+        chunk_callback: Optional[Callable[[Optional[bytes]], None]] = None,
     ):
         with self._api_lock:
             self._tts_done_event.clear()
@@ -175,11 +192,15 @@ class TTSPlayer:
             self._stop_event.clear()
 
             if self._tts_worker is None or not self._tts_worker.is_alive():
-                self._tts_worker = threading.Thread(target=self._tts_worker_loop, daemon=True)
+                self._tts_worker = threading.Thread(
+                    target=self._tts_worker_loop, daemon=True
+                )
                 self._tts_worker.start()
 
             if self._playback_worker is None or not self._playback_worker.is_alive():
-                self._playback_worker = threading.Thread(target=self._playback_worker_loop, daemon=True)
+                self._playback_worker = threading.Thread(
+                    target=self._playback_worker_loop, daemon=True
+                )
                 self._playback_worker.start()
 
             clear_queue(self._text_queue)
@@ -190,16 +211,16 @@ class TTSPlayer:
             self._current_save_path = save_path
             self._session_audio_chunks = []
 
-    def feed(self, text_chunk: str):
+    def feed(self, text_chunk: str, text_language: Optional[str] = None):
         with self._api_lock:
             if not text_chunk:
                 return
             if self._split:
                 sentences = self._text_splitter.split(text_chunk.strip())
                 for sentence in sentences:
-                    self._text_queue.put(sentence)
+                    self._text_queue.put((sentence, text_language))
             else:
-                self._text_queue.put(text_chunk)
+                self._text_queue.put((text_chunk, text_language))
 
     def end_session(self):
         with self._api_lock:
