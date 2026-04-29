@@ -92,6 +92,7 @@ class TTSPlayer:
 
                 lang_to_use = text_language if text_language else gsv_model.LANGUAGE
 
+                print(f"{sentence}")
                 tts_client.stop_event.clear()
                 audio_chunk = tts_client.tts(
                     text=sentence,

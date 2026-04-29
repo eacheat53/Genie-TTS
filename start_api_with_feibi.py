@@ -7,7 +7,7 @@ from genie_tts.PredefinedCharacter import download_chara, CHARA_LANG
 import genie_tts.Server as server_module
 
 if __name__ == "__main__":
-    print("🚀 准备加载角色 feibi...")
+    print("准备加载角色 feibi...")
     character_name = "feibi"
     
     # 1. 下载并获取路径
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     language = CHARA_LANG[character_name]
 
     # 2. 直接调用底层的加载方法
-    print("⏳ 正在把模型载入内存...")
+    print("正在把模型载入内存...")
     genie.load_character(character_name, model_dir, language)
 
     # 3. 读取参考音频的配置
@@ -33,9 +33,9 @@ if __name__ == "__main__":
         'language': language
     }
     
-    print("✅ 角色及参考音频配置完成！")
-    print("🎉 现在去 Chrome 里面用插件划词朗读吧！")
-    print("🚀 启动 API 服务 (按 Ctrl+C 退出)...")
+    print("角色及参考音频配置完成！")
+    print("现在去 Chrome 里面用插件划词朗读吧！")
+    print("启动 API 服务 (按 Ctrl+C 退出)...")
 
     # 5. 启动 FastAPI 服务，这会阻塞当前进程
     server_module.start_server(host="127.0.0.1", port=8000, workers=1)

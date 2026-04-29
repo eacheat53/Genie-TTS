@@ -7,6 +7,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import numpy as np
+import librosa
 
 from .Audio.ReferenceAudio import ReferenceAudio
 from .Core.TTSPlayer import tts_player
@@ -45,6 +47,7 @@ class TTSPayload(BaseModel):
     text_language: Optional[str] = None
     split_sentence: bool = False
     save_path: Optional[str] = None
+    speed: float = 1.0
 
 
 @app.post("/load_character")
@@ -141,6 +144,17 @@ async def tts_endpoint(payload: TTSPayload):
     stream_queue: asyncio.Queue[Union[bytes, None]] = asyncio.Queue()
 
     def tts_chunk_callback(chunk: Optional[bytes]):
+        if chunk is not None and payload.speed != 1.0:
+            try:
+                from pedalboard import time_stretch
+                audio_int16 = np.frombuffer(chunk, dtype=np.int16)
+                audio_float = audio_int16.astype(np.float32) / 32767.0
+                # 使用 pedalboard(基于 Rubberband 算法) 替代 librosa，彻底解决电音和发虚的问题
+                audio_float_stretched = time_stretch(audio_float, 32000, payload.speed)
+                audio_int16_stretched = (audio_float_stretched * 32767.0).astype(np.int16)
+                chunk = audio_int16_stretched.tobytes()
+            except Exception as e:
+                logger.error(f"Error changing speed: {e}")
         loop.call_soon_threadsafe(stream_queue.put_nowait, chunk)
 
     text_lang = (
