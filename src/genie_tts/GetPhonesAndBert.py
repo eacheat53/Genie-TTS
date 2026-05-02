@@ -32,6 +32,10 @@ def _expand_roberta_output(text_bert: np.ndarray, word2ph: list[int], num_phones
     if text_bert.ndim == 3 and text_bert.shape[0] == 1:
         text_bert = text_bert[0]
 
+    # 防御：如果 word2ph 为空（纯标点或特殊字符导致），直接返回零向量
+    if not word2ph or num_phones == 0:
+        return np.zeros((num_phones, text_bert.shape[-1]), dtype=np.float32)
+
     if text_bert.shape[0] == num_phones:
         return text_bert.astype(np.float32)
 
@@ -93,7 +97,10 @@ def get_phones_and_bert(prompt_text: str, language: str = 'japanese') -> Tuple[n
         list_berts = []
 
         for chunk in split:
-            phones_seq, text_bert = _get_phones_and_bert_pure_lang(chunk['content'], chunk['language'])
+            content = chunk['content'].strip()
+            if not content:
+                continue  # 跳过被切出来的空白碎片
+            phones_seq, text_bert = _get_phones_and_bert_pure_lang(content, chunk['language'])
             list_phones.append(phones_seq)
             list_berts.append(text_bert)
 
