@@ -273,6 +273,7 @@ class ToneSandhi:
         for i, (word, pos) in enumerate(seg):
             if (
                     i - 1 >= 0
+                    and sub_finals_list[i - 1] and sub_finals_list[i]  # 防御空拼音列表
                     and self._all_tone_three(sub_finals_list[i - 1])
                     and self._all_tone_three(sub_finals_list[i])
                     and not merge_last[i - 1]
@@ -303,6 +304,8 @@ class ToneSandhi:
         for i, (word, pos) in enumerate(seg):
             if (
                     i - 1 >= 0
+                    and sub_finals_list[i - 1] and sub_finals_list[i]  # 防御空拼音列表
+                    and sub_finals_list[i - 1][-1] and sub_finals_list[i][0]  # 防御空字符串
                     and sub_finals_list[i - 1][-1][-1] == "3"
                     and sub_finals_list[i][0][-1] == "3"
                     and not merge_last[i - 1]
